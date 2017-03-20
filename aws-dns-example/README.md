@@ -51,30 +51,31 @@ Modify Security Group to allow primary EIP of 2nd ENI to connect to ports 22/435
 Launch BIG-IP instances using 25Mbps Better hourly license.
 
 ```
-python create-stack.py -t templates/bigip-hourly-stack.template -p params/bigip-hourly-stack-params.json --password-file=admin_passwd.txt --sshkey=erchen -i erchen-az1-eni-stack -s erchen-bigip-1
-python create-stack.py -t templates/bigip-hourly-stack.template -p params/bigip-hourly-stack-params.json --password-file=admin_passwd.txt --sshkey=erchen -i erchen-az2-eni-stack -s erchen-bigip-2
+./create-stack.py -t templates/bigip-hourly-stack.template -p params/bigip-hourly-stack-params.json --password-file=admin_passwd.txt --sshkey=erchen -i erchen-az1-eni-stack -s erchen-bigip-1
+./create-stack.py -t templates/bigip-hourly-stack.template -p params/bigip-hourly-stack-params.json --password-file=admin_passwd.txt --sshkey=erchen -i erchen-az2-eni-stack -s erchen-bigip-2
 ```
 
 Configure BIG-IP DNS and create sync cluster (DNS)
 
 ```
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action setup_dns
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action gtm_add
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action setup_dns2
+./dns-demo.py --action setup_dns --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
+./dns-demo.py --action gtm_add --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
+./dns-demo.py --action setup_dns2 --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
 ```
 
 Install Application Services iApp, Deploy Sample Virtual Server, and setup DNS.
 
 ```
---password-file admin_passwd.txt --action import_iapp
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action deploy_primary_vs1 --pool_members 0:10.1.10.190:80:0:1:10:enabled:none,0:10.1.12.223:80:0:1:0:enabled:none
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action deploy_secondary_vs1 --pool_members 0:10.1.12.223:80:0:1:10:enabled:none,0:10.1.10.190:80:0:1:0:enabled:none
-python dns-demo.py --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt --action deploy_vs1_dns
+./dns-demo.py --action import_iapp --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
+./dns-demo.py --action deploy_primary_vs1 --pool_members  0:10.1.10.190:80:0:1:10:enabled:none,0:10.1.12.223:80:0:1:0:enabled:none --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
+./dns-demo.py --action deploy_secondary_vs1 --pool_members 0:10.1.12.223:80:0:1:10:enabled:none,0:10.1.10.190:80:0:1:0:enabled:none --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
+./dns-demo.py --action deploy_vs1_dns --primary_stack erchen-bigip-1 --secondary_stack erchen-bigip-2 --password-file admin_passwd.txt
 ```
 
 Resulting Configuration
 
 2x DNS listeners for external/internal clients
+
 ![](./images/aws-dns-demo-dns-listeners.png)
 
 Virtual Server / Pools
