@@ -7,15 +7,16 @@ from optparse import OptionParser
 import pexpect
 import time
 import logging
+from distutils.version import LooseVersion
 
 logger = logging.getLogger('bigip_dns_helper')
 logger.setLevel(logging.INFO)
 
 class DnsHelper(object):
    def __init__(self, host, username, password, 
-                peer_host=None, peer_username=None, peer_password = None,partition='Common'):
+                peer_host=None, peer_username=None, peer_password = None,partition='Common',port=443):
       self.mgmt2 = None
-      self.mgmt = ManagementRoot(host, username, password)
+      self.mgmt = ManagementRoot(host, username, password, port=port)
 
       self.host = host
       self.username = username
@@ -23,17 +24,22 @@ class DnsHelper(object):
       self.peer_username = peer_username
       self.peer_password = peer_password
       self.peer_host = peer_host
-
+      self.port = port
       if peer_host:
-         self.mgmt2 = ManagementRoot(peer_host, peer_username, peer_password)
+         self.mgmt2 = ManagementRoot(peer_host, peer_username, peer_password,port=self.port)
 
       self.session = self.mgmt._meta_data['bigip']._meta_data['icr_session']
       self.partition = partition
 
+      
+      if LooseVersion(self.mgmt._meta_data['tmos_version']) < LooseVersion('12.1.0'):
+         raise Exception,"This has only been tested on 12.1."
+      self.v13 = LooseVersion(self.mgmt._meta_data['tmos_version']) > LooseVersion('12.1')
+
    def enable_sync(self):
       "enable sync of BIG-IP DNS config"
       payload = {"synchronization":"yes"}
-      r = self.session.patch("https://%s/mgmt/tm/gtm/global-settings/general" %(self.host),data=json.dumps(payload))
+      r = self.session.patch("https://%s:%s/mgmt/tm/gtm/global-settings/general" %(self.host,self.port),data=json.dumps(payload))
 
    def create_dns_cache(self):
       "create dns cache"
@@ -49,11 +55,14 @@ class DnsHelper(object):
       addresses = [{'name': server_ip}]
       if translation:
          addresses[0]['translation'] = translation
-      self.mgmt.tm.gtm.servers.server.create(name=server_name,
-                                             datacenter=datacenter,
-                                             addresses=addresses,
-                                             monitor='/Common/bigip',
-                                             product='single-bigip')
+      payload = {'name':server_name,
+                 'datacenter':datacenter,
+                 'addresses':addresses,
+                 'monitor':'/Common/bigip',
+                 'product':'single-bigip'}
+      if self.v13:
+         del payload['product']
+      self.mgmt.tm.gtm.servers.server.create(**payload)
    def create_external_dns_profile(self):
       dns_obj = self.mgmt.tm.ltm.profile.dns_s.dns
       dns_obj.create(name='external_dns',kind="tm:ltm:profile:dns:dnsstate", defaultsFrom="/Common/dns",useLocalBind="no")
@@ -281,6 +290,7 @@ if __name__ == "__main__":
    parser.add_option('--name')
    parser.add_option('--vip')
    parser.add_option('--vip_translate')
+   parser.add_option('--port')
 
    (options,args) = parser.parse_args()
 
@@ -301,7 +311,7 @@ if __name__ == "__main__":
    peer_host = options.peer_host
    peer_selfip = options.peer_selfip
 
-   dns_helper = DnsHelper(host, username, password, peer_host, peer_user, password)
+   dns_helper = DnsHelper(host, username, password, peer_host, peer_user, password, port=options.port)
 
    if options.action == 'enable_sync':
       dns_helper.enable_sync()
