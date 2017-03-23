@@ -290,7 +290,7 @@ if __name__ == "__main__":
    parser.add_option('--name')
    parser.add_option('--vip')
    parser.add_option('--vip_translate')
-   parser.add_option('--port')
+   parser.add_option('--port',default=443)
 
    (options,args) = parser.parse_args()
 
