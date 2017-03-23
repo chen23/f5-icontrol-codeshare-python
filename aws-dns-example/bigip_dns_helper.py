@@ -8,21 +8,54 @@ import pexpect
 import time
 import logging
 from distutils.version import LooseVersion
+import requests
+try:
+   requests.packages.urllib3.disable_warnings()
+except:
+   pass
 
-logger = logging.getLogger('bigip_dns_helper')
-logger.setLevel(logging.INFO)
+#logger = logging.getLogger('bigip_dns_helper')
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
 
 class DnsHelper(object):
    def __init__(self, host, username, password, 
-                peer_host=None, peer_username=None, peer_password = None,partition='Common',port=443):
+                peer_username=None, peer_password = None,
+                partition='Common',port=443,
+                shell_username=None, shell_password=None,
+                peer_shell_username=None, peer_shell_password=None,
+                peer_host=None):
+
       self.mgmt2 = None
       self.mgmt = ManagementRoot(host, username, password, port=port)
 
       self.host = host
+      # iControl REST
       self.username = username
       self.password = password
+      # SSH
+      self.shell_username = shell_username
+      self.shell_password = shell_password
+
+      if not shell_username:
+         self.shell_username = username
+
+      if not shell_password:
+         self.shell_password = password
+
+      # iControl REST
       self.peer_username = peer_username
       self.peer_password = peer_password
+
+      self.peer_shell_username = peer_shell_username
+      self.peer_shell_password = peer_shell_password
+      
+      if not self.peer_shell_username:
+         self.peer_shell_username = peer_username
+
+      if not self.peer_shell_password:
+         self.peer_shell_password = peer_password
+
       self.peer_host = peer_host
       self.port = port
       if peer_host:
@@ -55,6 +88,8 @@ class DnsHelper(object):
       addresses = [{'name': server_ip}]
       if translation:
          addresses[0]['translation'] = translation
+      else:
+         addresses[0]['translation'] = 'none'
       payload = {'name':server_name,
                  'datacenter':datacenter,
                  'addresses':addresses,
@@ -62,7 +97,8 @@ class DnsHelper(object):
                  'product':'single-bigip'}
       if self.v13:
          del payload['product']
-      self.mgmt.tm.gtm.servers.server.create(**payload)
+         addresses[0]['deviceName'] = server_name
+      print self.mgmt.tm.gtm.servers.server.create(**payload)
    def create_external_dns_profile(self):
       dns_obj = self.mgmt.tm.ltm.profile.dns_s.dns
       dns_obj.create(name='external_dns',kind="tm:ltm:profile:dns:dnsstate", defaultsFrom="/Common/dns",useLocalBind="no")
@@ -135,12 +171,12 @@ class DnsHelper(object):
 
       selfip_obj = filter(lambda a: a.address.startswith(peer_selfip_translate),self.mgmt2.tm.net.selfips.get_collection())[0]
       orig_allowService =  selfip_obj.allowService
-      if 'tcp:22' not in orig_allowService:
+      if 'tcp:22' not in orig_allowService and orig_allowService != 'all':
          selfip_obj.allowService += ['tcp:22']
          selfip_obj.update()
       command = 'gtm_add'
       exit_code = self._dns_expect("gtm_add", peer_selfip)
-      if 'tcp:22' not in orig_allowService:
+      if 'tcp:22' not in orig_allowService and orig_allowService != 'all':
          selfip_obj = self.mgmt2.tm.net.selfips.load(name=selfip_obj.name,partition=self.partition)
          selfip_obj.allowService = orig_allowService
          selfip_obj.update()
@@ -159,12 +195,12 @@ class DnsHelper(object):
 
    def _dns_expect(self, command, peer_host):
 
-      user = self.username
+      user = self.shell_username
       host = self.host
-      peer_user = self.peer_username
-      password = self.password
+      peer_user = self.shell_username
+      password = self.shell_password
 
-      print_debug = 0
+      print_debug = 1
       if print_debug == 1:
          print "user: " + user
          print "host: " + host
@@ -268,6 +304,8 @@ class DnsHelper(object):
 if __name__ == "__main__":
    parser = OptionParser()
    parser.add_option('-u','--user',dest='user',default='admin')
+   parser.add_option('--shell_user')
+   parser.add_option('--shell_password')
    parser.add_option('--host',dest='host')
    parser.add_option('--selfip',dest='selfip')
    parser.add_option('-c','--cmd',dest='cmd')
@@ -281,6 +319,9 @@ if __name__ == "__main__":
 
    parser.add_option('--peer_user',dest='peer_user',default='admin')
    parser.add_option('--peer_host',dest='peer_host')
+
+   parser.add_option('--shell-password-file',dest='shell_password_file')
+
    parser.add_option('--peer_selfip',dest='peer_selfip')
    parser.add_option('--peer_selfip_translate',dest='peer_selfip_translate')
    parser.add_option('--listener_ip')
@@ -303,6 +344,13 @@ if __name__ == "__main__":
    else:
       password = options.password
 
+   if options.shell_password_file:
+      print options.shell_password_file
+      shell_password = open(options.shell_password_file).readline().strip()
+   else:
+      shell_password = options.shell_password
+
+
    user = options.user
    host = options.host
    selfip = options.selfip
@@ -310,8 +358,21 @@ if __name__ == "__main__":
    peer_user = options.peer_user
    peer_host = options.peer_host
    peer_selfip = options.peer_selfip
+   shell_user = options.user
 
-   dns_helper = DnsHelper(host, username, password, peer_host, peer_user, password, port=options.port)
+   if options.shell_user:
+      shell_user = options.shell_user
+
+   if not shell_password:
+      shell_password = password
+   print shell_user
+   dns_helper = DnsHelper(host, username, password, 
+                          peer_host=peer_host, 
+                          peer_username=peer_user, 
+                          peer_password=password, 
+                          shell_username=shell_user,
+                          shell_password=shell_password,
+                          port=options.port)
 
    if options.action == 'enable_sync':
       dns_helper.enable_sync()
